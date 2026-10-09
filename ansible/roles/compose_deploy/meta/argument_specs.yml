@@ -1,0 +1,108 @@
+---
+argument_specs:
+  main:
+    short_description: Déploie une application docker compose à partir d'une archive du dépôt
+    options:
+      compose_deploy_archive:
+        type: str
+        default: ""
+        description: >-
+          Archive tar.gz du code (préfixe unique, ex. git archive --prefix=src/), sur le contrôleur.
+          Vide = compose utilisé en place, sans synchronisation.
+      compose_deploy_env_file:
+        type: str
+        default: .env
+        description: Fichier passé à docker compose --env-file. Vide = aucun.
+      compose_deploy_prune_images:
+        type: bool
+        default: true
+        description: Supprime les images sans tag après le démarrage. Faux sur un hôte partagé.
+      compose_deploy_project_name:
+        type: str
+        default: ""
+        description: >-
+          Nom du projet docker compose (-p). À fixer quand deux environnements partagent un nom de dossier,
+          sinon --remove-orphans de l'un supprime les conteneurs de l'autre.
+      compose_deploy_dir:
+        type: path
+        required: true
+        description: Dossier de l'application sur l'hôte (contient le compose et le .env).
+      compose_deploy_compose_file:
+        type: str
+        default: docker-compose.yml
+      compose_deploy_release_root:
+        type: str
+        default: "~/.compose-deploy-releases"
+      compose_deploy_site_url:
+        type: str
+        default: ""
+      compose_deploy_proxy_service:
+        type: str
+        default: ""
+        description: Service recréé quand son Caddyfile change (monté en lecture seule). Vide = aucun.
+      compose_deploy_pull_services:
+        type: list
+        elements: str
+        default: []
+      compose_deploy_required_containers:
+        type: list
+        elements: str
+        default: []
+      compose_deploy_health_checks:
+        type: list
+        elements: dict
+        default: []
+        options:
+          url:
+            type: str
+            required: true
+          status:
+            type: int
+            required: true
+      compose_deploy_post_up_commands:
+        type: list
+        elements: dict
+        default: []
+        description: Commandes lancées dans un service après le démarrage (docker compose exec -T).
+        options:
+          service:
+            type: str
+            required: true
+          command:
+            type: list
+            elements: str
+            required: true
+          unchanged_regex:
+            type: str
+            description: Sortie signifiant « rien à faire » (sinon la tâche est comptée comme un changement).
+      compose_deploy_health_retries:
+        type: int
+        default: 30
+      compose_deploy_health_delay:
+        type: int
+        default: 5
+      compose_deploy_manage_env:
+        type: bool
+        default: false
+        description: Écrit le .env à partir de compose_deploy_secrets. Faux = le .env du serveur est conservé tel quel.
+      compose_deploy_secrets:
+        type: dict
+        default: {}
+      compose_deploy_required_secrets:
+        type: list
+        elements: str
+        default: []
+      compose_deploy_registry:
+        type: str
+        default: ghcr.io
+      compose_deploy_registry_user:
+        type: str
+        default: ""
+      compose_deploy_registry_token:
+        type: str
+        default: ""
+        no_log: true
+      compose_deploy_preserved_paths:
+        type: list
+        elements: str
+        default: []

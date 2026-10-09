@@ -1,0 +1,35 @@
+---
+- name: Préparer la cible
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Outils requis par le rôle
+      ansible.builtin.raw: apk add --no-cache python3 rsync tar
+      changed_when: true
+
+    - name: Attendre le démon Docker
+      ansible.builtin.command: docker info
+      register: compose_deploy_docker_info
+      retries: 30
+      delay: 2
+      until: compose_deploy_docker_info.rc == 0
+      changed_when: false
+
+    # État initial simulant un serveur déjà en service : un reste d'ancienne
+    # version (à supprimer) et des données hors dépôt (à préserver).
+    - name: Dossiers existants
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: [/opt/app/backups, /opt/app/vieux-code]
+
+    - name: Fichiers existants
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        content: "{{ item.content }}"
+        mode: "0644"
+      loop:
+        - {path: /opt/app/backups/a-garder.dump, content: "dump\n"}
+        - {path: /opt/app/vieux-code/reste.txt, content: "reste\n"}
+        - {path: /opt/app/.env.backup, content: "ANCIEN=1\n"}

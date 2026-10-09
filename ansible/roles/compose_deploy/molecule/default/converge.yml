@@ -1,0 +1,39 @@
+---
+- name: Construire l'archive de test
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    # Construite une seule fois : l'étape d'idempotence doit rejouer la même
+    # archive, comme un second déploiement du même commit.
+    - name: Archive de la mini-application
+      ansible.builtin.shell:
+        cmd: >-
+          set -e; d=$(mktemp -d); cp -Rp fixture "$d/src";
+          tar -czf /tmp/compose-deploy-fixture.tar.gz -C "$d" src; rm -r "$d"
+        chdir: "{{ playbook_dir }}"
+        creates: /tmp/compose-deploy-fixture.tar.gz
+
+- name: Converge
+  hosts: all
+  gather_facts: false
+  vars:
+    compose_deploy_archive: /tmp/compose-deploy-fixture.tar.gz
+    compose_deploy_dir: /opt/app
+    compose_deploy_compose_file: docker-compose.yml
+    compose_deploy_pull_services: [web]
+    compose_deploy_required_containers: [compose-deploy-web]
+    compose_deploy_health_checks:
+      - {url: "http://localhost:8080/api/health", status: 200}
+      - {url: "http://localhost:8080/admin/", status: 302}
+    compose_deploy_health_delay: 2
+    compose_deploy_post_up_commands:
+      - service: web
+        command: [cat, /etc/nginx/conf.d/default.conf]
+        unchanged_regex: listen 80
+    compose_deploy_manage_env: true
+    compose_deploy_required_secrets: [DB_PASSWORD]
+    compose_deploy_secrets:
+      DB_PASSWORD: secret-de-test
+      OPTIONNEL: ""
+  roles:
+    - role: compose_deploy

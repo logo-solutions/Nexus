@@ -1,0 +1,25 @@
+---
+# Commun à toutes les commandes docker compose du rôle.
+- name: Commande docker compose
+  ansible.builtin.set_fact:
+    compose_deploy_compose_cmd: >-
+      {{ ['docker', 'compose']
+         + (['-p', compose_deploy_project_name] if compose_deploy_project_name | length > 0 else [])
+         + (['--env-file', compose_deploy_env_file] if compose_deploy_env_file | length > 0 else [])
+         + ['-f', compose_deploy_compose_file] }}
+
+# Sans archive, le compose est utilisé en place (dépôt cloné sur l'hôte,
+# ex. Nexus sur le Mac mini) : aucune synchronisation.
+- name: Synchroniser le code
+  ansible.builtin.import_tasks: sync.yml
+  when: compose_deploy_archive | default('') | length > 0
+
+- name: Écrire le .env
+  ansible.builtin.import_tasks: env.yml
+  when: compose_deploy_manage_env
+
+- name: Démarrer la pile
+  ansible.builtin.import_tasks: stack.yml
+
+- name: Vérifier le déploiement
+  ansible.builtin.import_tasks: verify.yml
