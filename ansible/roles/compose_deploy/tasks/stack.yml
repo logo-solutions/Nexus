@@ -1,0 +1,73 @@
+---
+# Le serveur n'a pas le SDK Python de Docker : la CLI docker est appelée
+# directement plutôt que via community.docker.
+- name: Connexion au registre d'images
+  ansible.builtin.command:
+    argv: [docker, login, "{{ compose_deploy_registry }}", -u, "{{ compose_deploy_registry_user }}", --password-stdin]
+    stdin: "{{ compose_deploy_registry_token }}"
+  when: compose_deploy_registry_token | length > 0
+  changed_when: false
+  no_log: true
+
+- name: Récupérer les images publiées par la CI
+  ansible.builtin.command:
+    argv: "{{ compose_deploy_compose_cmd + ['pull', '--quiet'] + compose_deploy_pull_services }}"
+    chdir: "{{ compose_deploy_dir }}"
+  when: compose_deploy_pull_services | length > 0
+  changed_when: false
+
+# Le jeton peut être personnel (lancement depuis un poste) : il ne doit pas
+# rester enregistré sur le serveur après usage.
+- name: Déconnexion du registre d'images
+  ansible.builtin.command:
+    argv: [docker, logout, "{{ compose_deploy_registry }}"]
+  when: compose_deploy_registry_token | length > 0
+  changed_when: false
+
+- name: Démarrer les services
+  ansible.builtin.command:
+    argv: "{{ compose_deploy_compose_cmd + ['up', '-d', '--remove-orphans'] }}"
+    chdir: "{{ compose_deploy_dir }}"
+  register: compose_deploy_up
+  # Un service inchangé est annoncé « Running » ; tout le reste est un changement.
+  changed_when: (compose_deploy_up.stdout ~ compose_deploy_up.stderr) is search('Recreate|Created|Removed|Starting')
+
+# Chaque déploiement laisse l'ancienne version des images sans tag : le
+# 2026-10-08, 70 images orphelines (27 Go) ont rempli le disque du serveur.
+# Seules les images sans tag ni conteneur sont supprimées — jamais de volume.
+# Désactivable sur un hôte partagé avec d'autres piles (Mac mini).
+- name: Supprimer les images orphelines
+  ansible.builtin.command:
+    argv: [docker, image, prune, --force]
+  register: compose_deploy_prune
+  when: compose_deploy_prune_images
+  changed_when: compose_deploy_prune.stdout is not search('reclaimed space. 0B')
+
+# Le Caddyfile est monté en lecture seule : `up -d` ne recrée pas le
+# conteneur quand seul ce fichier change, et l'ancien routage resterait actif.
+- name: Recréer le proxy quand son Caddyfile a changé
+  ansible.builtin.command:
+    argv: "{{ compose_deploy_compose_cmd + ['up', '-d', '--no-deps', '--force-recreate', compose_deploy_proxy_service] }}"
+    chdir: "{{ compose_deploy_dir }}"
+  when:
+    - compose_deploy_proxy_service | length > 0
+    - compose_deploy_sync.stdout | default('') is search('(^|\n)\S+\s+Caddyfile($|\n)')
+  changed_when: true
+
+# Ex. migrations de base de données : exécutées dans un service démarré,
+# relancées tant que le service n'est pas prêt à les recevoir.
+- name: Commandes après démarrage
+  ansible.builtin.command:
+    argv: >-
+      {{ compose_deploy_compose_cmd + ['exec', '-T', item.service] + item.command }}
+    chdir: "{{ compose_deploy_dir }}"
+  loop: "{{ compose_deploy_post_up_commands }}"
+  loop_control:
+    label: "{{ item.service }} : {{ item.command | join(' ') }}"
+  register: compose_deploy_post_up
+  retries: "{{ compose_deploy_health_retries }}"
+  delay: "{{ compose_deploy_health_delay }}"
+  until: compose_deploy_post_up.rc == 0
+  changed_when: >-
+    item.unchanged_regex is not defined
+    or not ((compose_deploy_post_up.stdout ~ compose_deploy_post_up.stderr) is search(item.unchanged_regex))

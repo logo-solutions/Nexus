@@ -1,0 +1,70 @@
+---
+# Chaque archive est extraite dans un dossier nommé d'après son empreinte :
+# un second passage avec la même archive ne refait rien (idempotence).
+# Ces étapes ne touchent que compose_deploy_release_root, d'où check_mode: false — sans
+# elles, --check comparerait l'application à un dossier vide.
+- name: Empreinte de l'archive
+  ansible.builtin.stat:
+    path: "{{ compose_deploy_archive }}"
+    checksum_algorithm: sha1
+  delegate_to: localhost
+  register: compose_deploy_archive_stat
+
+- name: Vérifier que l'archive existe
+  ansible.builtin.assert:
+    that: compose_deploy_archive_stat.stat.exists
+    fail_msg: "Archive introuvable : {{ compose_deploy_archive }}"
+    quiet: true
+
+- name: Dossier de la version
+  ansible.builtin.set_fact:
+    compose_deploy_release_dir: "{{ compose_deploy_release_root }}/{{ compose_deploy_archive_stat.stat.checksum[:12] }}"
+
+- name: Créer le dossier de la version
+  ansible.builtin.file:
+    path: "{{ compose_deploy_release_dir }}"
+    state: directory
+    mode: "0755"
+  check_mode: false
+  register: compose_deploy_release
+
+- name: Extraire l'archive
+  ansible.builtin.unarchive:
+    src: "{{ compose_deploy_archive }}"
+    dest: "{{ compose_deploy_release_dir }}"
+    extra_opts: [--strip-components=1]
+    creates: "{{ compose_deploy_release_dir }}/{{ compose_deploy_compose_file }}"
+  check_mode: false
+
+# --omit-dir-times : l'écriture du .env change la date du dossier racine, ce
+# qui ferait annoncer un changement à chaque passage.
+- name: Synchroniser le code avec l'application (suppression des restes)
+  ansible.builtin.command:
+    argv: >-
+      {{ ['rsync', '-a', '--omit-dir-times', '--delete', '--itemize-changes']
+         + (['--dry-run'] if ansible_check_mode else [])
+         + (compose_deploy_preserved_paths | map('regex_replace', '^', '--exclude=') | list)
+         + [compose_deploy_release.path ~ '/', compose_deploy_dir ~ '/'] }}
+  register: compose_deploy_sync
+  changed_when: compose_deploy_sync.stdout | length > 0
+  check_mode: false
+
+- name: Fichiers modifiés
+  ansible.builtin.debug:
+    var: compose_deploy_sync.stdout_lines
+  when: compose_deploy_sync.stdout | length > 0
+
+- name: Lister les anciennes versions extraites
+  ansible.builtin.find:
+    paths: "{{ compose_deploy_release_root }}"
+    file_type: directory
+    excludes: "{{ compose_deploy_release_dir | basename }}"
+  register: compose_deploy_old_releases
+
+- name: Supprimer les anciennes versions extraites
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ compose_deploy_old_releases.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"

@@ -1,0 +1,8 @@
+---
+# Le rôle n'utilise que ansible.builtin ; ces collections servent à Molecule
+# (pilote docker).
+collections:
+  - name: community.docker
+    version: ">=4.8.0,<6.0.0"
+  - name: ansible.posix
+    version: ">=2.0.0,<3.0.0"

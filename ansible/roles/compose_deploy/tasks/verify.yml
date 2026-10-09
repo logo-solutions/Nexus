@@ -1,0 +1,27 @@
+---
+# Lecture seule : exécuté aussi en --check pour contrôler la prod sans la toucher.
+- name: Conteneurs attendus en marche
+  ansible.builtin.command:
+    argv: "{{ ['docker', 'inspect', '-f', '{{.Name}} {{.State.Running}}'] + compose_deploy_required_containers }}"
+  register: compose_deploy_containers
+  changed_when: false
+  check_mode: false
+  failed_when: compose_deploy_containers.rc != 0 or (compose_deploy_containers.stdout is search(' false'))
+  retries: "{{ compose_deploy_health_retries }}"
+  delay: "{{ compose_deploy_health_delay }}"
+  until: compose_deploy_containers is not failed
+  when: compose_deploy_required_containers | length > 0
+
+- name: Contrôles HTTP
+  ansible.builtin.uri:
+    url: "{{ item.url }}"
+    status_code: "{{ item.status }}"
+    follow_redirects: none
+  loop: "{{ compose_deploy_health_checks }}"
+  loop_control:
+    label: "{{ item.url }} → {{ item.status }}"
+  register: compose_deploy_http
+  retries: "{{ compose_deploy_health_retries }}"
+  delay: "{{ compose_deploy_health_delay }}"
+  until: compose_deploy_http is succeeded
+  check_mode: false

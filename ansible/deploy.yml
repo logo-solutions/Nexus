@@ -1,0 +1,7 @@
+---
+# Usage : cd ansible && ansible-playbook deploy.yml --check --diff, puis sans --check.
+- name: Déployer Nexus sur le Mac mini
+  hosts: macmini
+  gather_facts: false
+  roles:
+    - role: compose_deploy

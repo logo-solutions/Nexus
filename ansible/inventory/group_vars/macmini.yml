@@ -1,0 +1,17 @@
+---
+# Le compose est utilisé en place (pas d'archive) : le dossier du dépôt reste
+# celui du projet compose « nexus », le conteneur n'est donc pas recréé tant
+# que docker-compose.yml ne change pas.
+compose_deploy_dir: "{{ playbook_dir | dirname }}"
+compose_deploy_compose_file: docker-compose.yml
+compose_deploy_env_file: ""
+compose_deploy_registry_token: ""
+# Pas de pull : l'image « latest » ne doit changer que sur décision explicite.
+compose_deploy_pull_services: []
+# Mac mini partagé avec d'autres piles (Immich…) : aucune suppression d'image.
+compose_deploy_prune_images: false
+compose_deploy_required_containers: [nexus]
+compose_deploy_health_retries: 36
+compose_deploy_health_delay: 5
+compose_deploy_health_checks:
+  - {url: "http://127.0.0.1:8081/", status: 200}

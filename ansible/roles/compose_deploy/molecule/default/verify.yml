@@ -1,0 +1,43 @@
+---
+- name: Vérifier
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: État des fichiers
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /opt/app/docker-compose.yml
+        - /opt/app/.env
+        - /opt/app/.env.backup
+        - /opt/app/backups/a-garder.dump
+        - /opt/app/vieux-code/reste.txt
+      register: compose_deploy_fichiers
+
+    - name: Code synchronisé, données préservées, restes supprimés, .env privé
+      ansible.builtin.assert:
+        that:
+          - compose_deploy_fichiers.results[0].stat.exists
+          - compose_deploy_fichiers.results[1].stat.exists and compose_deploy_fichiers.results[1].stat.mode == '0600'
+          - compose_deploy_fichiers.results[2].stat.exists
+          - compose_deploy_fichiers.results[3].stat.exists
+          - not compose_deploy_fichiers.results[4].stat.exists
+
+    - name: Contenu du .env
+      ansible.builtin.slurp:
+        src: /opt/app/.env
+      register: compose_deploy_env_file
+
+    - name: Le .env contient les secrets fournis
+      ansible.builtin.assert:
+        that: "'DB_PASSWORD=secret-de-test' in (compose_deploy_env_file.content | b64decode)"
+
+    - name: Le service répond
+      ansible.builtin.uri:
+        url: http://localhost:8080/api/health
+        return_content: true
+      register: compose_deploy_health
+
+    - name: Réponse attendue
+      ansible.builtin.assert:
+        that: compose_deploy_health.content == "ok\n"
